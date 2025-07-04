@@ -20,7 +20,7 @@ def parse_phonemes(phonetic_string):
     
     phonemes = []
     i = 0
-    
+     
     while i < len(phonetic_string):
         # 跳过重音和音节分界符
         if phonetic_string[i] in ['ˈ', 'ˌ', '.']:
@@ -327,7 +327,7 @@ def calculate_phrase_score(reality_phone: str, standard_phone: str, is_phrase=Fa
     """
     if not is_phrase:
         # 单词直接用原始算法
-        return calculate_phone_sent_score_improved(reality_phone, standard_phone)
+        return calculate_phone_sent_score(reality_phone, standard_phone)
     
     # 短语则考虑连读
     reality_phonemes = parse_phonemes(reality_phone.strip())
@@ -366,11 +366,11 @@ def calculate_phrase_score(reality_phone: str, standard_phone: str, is_phrase=Fa
     
     # 如果没有合适的变体，回退到原始算法
     if best_score == 0:
-        return calculate_phone_sent_score_improved(reality_phone, standard_phone)
+        return calculate_phone_sent_score(reality_phone, standard_phone)
     
     return round(best_score, 2), best_operations
 
-def calculate_phone_sent_score_improved(reality_phone: str, standard_phone: str):
+def calculate_phone_sent_score(reality_phone: str, standard_phone: str):
     """
     用音素级分析和音素距离计算发音得分
     得分范围: 0-100（100为完美）
@@ -463,7 +463,7 @@ def test_algorithm():
     print("=== Algorithm Comparison ===")
     print("\n--- Single Word Tests ---")
     for reality, standard in test_cases:
-        new_score, new_ops = calculate_phone_sent_score_improved(reality, standard)
+        new_score, new_ops = calculate_phone_sent_score(reality, standard)
         
         print(f"\nInput: '{reality}' vs Standard: '{standard}'")
         print(f"New Score: {new_score}/100")
@@ -472,7 +472,7 @@ def test_algorithm():
     print("\n--- Phrase Tests (with connected speech) ---")
     for reality, standard in phrase_test_cases:
         phrase_score, phrase_ops = calculate_phrase_score(reality, standard, is_phrase=True)
-        single_score, single_ops = calculate_phone_sent_score_improved(reality, standard)
+        single_score, single_ops = calculate_phone_sent_score(reality, standard)
         
         print(f"\nPhrase: '{reality}' vs Standard: '{standard}'")
         print(f"With connected speech: {phrase_score}/100")
