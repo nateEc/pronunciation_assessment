@@ -1,3 +1,60 @@
+def parse_phonemes_phrase(phonetic_string):
+    """
+    将音标字符串解析为单独的音素，支持更广泛的多字符音素（特别是针对美式发音）
+    参数:
+        phonetic_string: 如 'nəʊrθ' 或 '/nɔːθ əˈmɛrɪkən/' 的字符串
+    返回:
+        音素列表: ['n', 'əʊ', 'r', 'θ']
+    """
+    # 标准化输入字符串，移除常见符号
+    if "ː" in phonetic_string:
+        phonetic_string = phonetic_string.replace('ː', ':')
+    if "əʊ" in phonetic_string: # 兼容əʊ
+        pass
+    phonetic_string = phonetic_string.replace('(', '').replace(')', '').replace('/', '').replace('ˈ', '').replace('ˌ', '').replace('.', ' ').strip()
+    
+    # 定义多字符音素（顺序很重要，长的在前）
+    # 增加了 əʊ, ɔ:, ər, ɪr, ɛr, ʊr, ɔr, ɑr 等常见组合
+    multi_char_phonemes = [
+        # R-colored vowels
+        'ər', 'ɪr', 'ɛr', 'ʊr', 'ɔr', 'ɑr',
+        # Diphthongs (双元音)
+        'aɪ', 'aʊ', 'ɔɪ', 'eɪ', 'oʊ', 'əʊ', 
+        # Other diphthongs
+        'ɪə', 'eə', 'ʊə',
+        # Long vowels (长元音)
+        'i:', 'u:', 'ɑ:', 'ɔ:', 'ɜ:',
+        # Affricates (塞擦音)
+        'tʃ', 'dʒ',
+        # Other common multi-char symbols
+        'θ', 'ð', 'ʃ', 'ʒ', 'ŋ'
+    ]
+    
+    phonemes = []
+    i = 0
+    
+    while i < len(phonetic_string):
+        # 跳过空格
+        if phonetic_string[i] == ' ':
+            i += 1
+            continue
+            
+        # 优先匹配多字符音素
+        matched = False
+        for multi_phoneme in multi_char_phonemes:
+            if phonetic_string[i:].startswith(multi_phoneme):
+                phonemes.append(multi_phoneme)
+                i += len(multi_phoneme)
+                matched = True
+                break
+        
+        # 没有多字符匹配则加单字符
+        if not matched:
+            phonemes.append(phonetic_string[i])
+            i += 1
+            
+    return phonemes
+
 def parse_phonemes(phonetic_string):
     """
     将音标字符串解析为单独的音素，支持多字符音素
@@ -6,6 +63,16 @@ def parse_phonemes(phonetic_string):
     返回:
         音素列表: ['tʃ', 'ɔɪ', 's'] 或 ['l', 'aɪ', 'k']
     """
+     # 新增：处理全角冒号和括号
+    if "ː" in phonetic_string:
+        print("Warning: 全角冒号可能导致解析错误，请使用半角冒号")
+        phonetic_string = phonetic_string.replace('ː', ':')
+    if '(' in phonetic_string or ')' in phonetic_string:
+        phonetic_string = phonetic_string.replace('(', '').replace(')', '')
+    if '/' in phonetic_string:
+        phonetic_string = phonetic_string.replace('/', '')   
+    
+    
     # 定义多字符音素（顺序很重要，长的在前）
     multi_char_phonemes = [
         # 塞擦音
@@ -104,13 +171,13 @@ def phoneme_edit_distance(phonemes1, phonemes2):
     n = len(phonemes2)
     
     # 构建DP表，记录代价和操作
-    dp = [[(0, None)] * (n + 1) for _ in range(m + 1)]
+    dp = [[(0, "")] * (n + 1) for _ in range(m + 1)]
     
     # 初始化首行首列
     for i in range(m + 1):
-        dp[i][0] = (i, f'Delete {phonemes1[i-1]}' if i > 0 else None)
+        dp[i][0] = (i, "delete")
     for j in range(n + 1):
-        dp[0][j] = (j, f'Insert {phonemes2[j-1]}' if j > 0 else None)
+        dp[0][j] = (j, "insert")
     
     # 填充DP表
     for i in range(1, m + 1):
@@ -118,48 +185,51 @@ def phoneme_edit_distance(phonemes1, phonemes2):
             phoneme1 = phonemes1[i-1]
             phoneme2 = phonemes2[j-1]
             
-            # 替换代价用音素距离
             substitution_cost = get_phonetic_distance(phoneme1, phoneme2)
             
-            if substitution_cost == 0:  # 完全相同
-                dp[i][j] = (dp[i-1][j-1][0], None)
+            costs = {
+                "replace": dp[i-1][j-1][0] + substitution_cost,
+                "delete": dp[i-1][j][0] + 1.0,
+                "insert": dp[i][j-1][0] + 1.0
+            }
+            
+            if substitution_cost == 0:
+                min_op = "match"
             else:
-                # 计算三种操作的代价
-                delete_cost = dp[i-1][j][0] + 1.0
-                insert_cost = dp[i][j-1][0] + 1.0
-                replace_cost = dp[i-1][j-1][0] + substitution_cost
-                
-                min_cost = min(delete_cost, insert_cost, replace_cost)
-                
-                if min_cost == delete_cost:
-                    operation = f'Delete {phoneme1}'
-                elif min_cost == insert_cost:
-                    operation = f'Insert {phoneme2}'
-                else:
-                    operation = f'Replace {phoneme1} with {phoneme2} (distance: {substitution_cost:.2f})'
-                
-                dp[i][j] = (min_cost, operation)
-    
-    # 回溯得到操作序列
-    distance = dp[m][n][0]
+                min_op = min(costs, key=costs.get)
+
+            dp[i][j] = (costs.get(min_op, dp[i-1][j-1][0]), min_op)
+
+    # 回溯得到对齐和操作
+    alignment = []
     operations = []
     i, j = m, n
     
     while i > 0 or j > 0:
-        _, operation = dp[i][j]
-        if operation:
-            operations.append(operation)
+        cost, op = dp[i][j]
         
-        if operation and operation.startswith('Delete'):
-            i -= 1
-        elif operation and operation.startswith('Insert'):
-            j -= 1
-        else:
+        if op == "match":
+            alignment.append((phonemes1[i-1], phonemes2[j-1], "correct"))
             i -= 1
             j -= 1
-    
+        elif op == "replace":
+            alignment.append((phonemes1[i-1], phonemes2[j-1], "incorrect"))
+            operations.append(f'Replace {phonemes1[i-1]} with {phonemes2[j-1]}')
+            i -= 1
+            j -= 1
+        elif op == "delete":
+            alignment.append((phonemes1[i-1], None, "delete"))
+            operations.append(f'Delete {phonemes1[i-1]}')
+            i -= 1
+        elif op == "insert":
+            alignment.append((None, phonemes2[j-1], "insert"))
+            operations.append(f'Insert {phonemes2[j-1]}')
+            j -= 1
+
+    alignment.reverse()
     operations.reverse()
-    return distance, operations
+    
+    return dp[m][n][0], operations, alignment
 
 def is_completely_different_word(reality_phonemes, standard_phonemes):
     """
@@ -315,6 +385,19 @@ def generate_connected_speech_variants(phonemes_list):
     
     return [parse_phonemes(v) if isinstance(v, str) else v for v in variants]
 
+def get_score_level(score):
+    """
+    根据得分返回星级（0-3）
+    """
+    if score >= 90:
+        return 3  # 优秀
+    elif score >= 75:
+        return 2  # 良好
+    elif score >= 60:
+        return 1  # 及格
+    else:
+        return 0  # 需要努力
+
 def calculate_phrase_score(reality_phone: str, standard_phone: str, is_phrase=False):
     """
     计算短语发音得分，考虑连读现象
@@ -323,21 +406,22 @@ def calculate_phrase_score(reality_phone: str, standard_phone: str, is_phrase=Fa
         standard_phone: 标准发音的音标字符串  
         is_phrase: 是否为短语（决定是否启用连读分析）
     返回:
-        得分和操作列表
+        得分、操作列表、星级和高亮音素列表
     """
     if not is_phrase:
         # 单词直接用原始算法
         return calculate_phone_sent_score(reality_phone, standard_phone)
     
     # 短语则考虑连读
-    reality_phonemes = parse_phonemes(reality_phone.strip())
-    standard_phonemes = parse_phonemes(standard_phone.strip())
+    reality_phonemes = parse_phonemes_phrase(reality_phone.strip())
+    standard_phonemes = parse_phonemes_phrase(standard_phone.strip())
     
     # 生成标准发音的所有连读变体
     standard_variants = generate_connected_speech_variants(standard_phonemes)
     
     best_score = 0
     best_operations = []
+    best_alignment = []
     
     # 尝试与每个变体比对
     for variant in standard_variants:
@@ -346,7 +430,7 @@ def calculate_phrase_score(reality_phone: str, standard_phone: str, is_phrase=Fa
             continue
             
         # 计算与该变体的得分
-        distance, operations = phoneme_edit_distance(reality_phonemes, variant)
+        distance, operations, alignment = phoneme_edit_distance(reality_phonemes, variant)
         
         max_length = max(len(reality_phonemes), len(variant))
         if max_length == 0:
@@ -363,45 +447,70 @@ def calculate_phrase_score(reality_phone: str, standard_phone: str, is_phrase=Fa
         if score > best_score:
             best_score = score
             best_operations = operations
+            best_alignment = alignment
     
     # 如果没有合适的变体，回退到原始算法
     if best_score == 0:
         return calculate_phone_sent_score(reality_phone, standard_phone)
     
-    return round(best_score, 2), best_operations
+    final_score = round(best_score, 2)
+    score_level = get_score_level(final_score)
+    highlighted_phonemes = get_highlighted_phonemes(reality_phonemes, standard_phonemes, best_alignment)
+
+    return final_score, best_operations, score_level, highlighted_phonemes
+
+def get_highlighted_phonemes(reality_phonemes, standard_phonemes, alignment):
+    """
+    根据对齐结果，生成带高亮信息的标准音素列表
+    """
+    highlighted_phonemes = []
+    for reality_phoneme, standard_phoneme, op in alignment:
+        if op == "correct":
+            highlighted_phonemes.append({"phoneme": standard_phoneme, "status": "correct"})
+        elif op == "incorrect":
+            highlighted_phonemes.append({"phoneme": standard_phoneme, "status": "incorrect", "reality": reality_phoneme})
+        elif op == "delete":
+            # This case needs to be handled carefully. 
+            # The phoneme is in the standard but not in reality.
+            # We can decide whether to show it and how.
+            # Option 1: Add to the list with a "deleted" status.
+            # highlighted_phonemes.append({"phoneme": reality_phoneme, "status": "deleted"})
+            pass # Option 2: Don't show deleted phonemes in the standard sequence.
+        elif op == "insert":
+            highlighted_phonemes.append({"phoneme": standard_phoneme, "status": "inserted"})
+
+    return highlighted_phonemes
 
 def calculate_phone_sent_score(reality_phone: str, standard_phone: str):
     """
     用音素级分析和音素距离计算发音得分
-    得分范围: 0-100（100为完美）
+    返回:
+        得分(0-100), 操作列表, 星级(0-3), 高亮音素列表
     """
     reality_phone = reality_phone.strip()
     standard_phone = standard_phone.strip()
     
     # 解析为音素
-    reality_phonemes = parse_phonemes(reality_phone)
-    standard_phonemes = parse_phonemes(standard_phone)
+    reality_phonemes = parse_phonemes_phrase(reality_phone)
+    standard_phonemes = parse_phonemes_phrase(standard_phone)
     
     # 判断是否完全不同单词
     if is_completely_different_word(reality_phonemes, standard_phonemes):
-        return 0.0, ['完全不同的单词']
+        return 0.0, ['完全不同的单词'], 0, []
     
     # 计算音素编辑距离
-    distance, operations = phoneme_edit_distance(reality_phonemes, standard_phonemes)
+    distance, operations, alignment = phoneme_edit_distance(reality_phonemes, standard_phonemes)
     
+    # 生成高亮音素
+    highlighted_phonemes = get_highlighted_phonemes(reality_phonemes, standard_phonemes, alignment)
+
     # 改进的打分函数，扣分更宽容
     max_length = max(len(reality_phonemes), len(standard_phonemes))
     if max_length == 0:
-        return 100.0, []
+        return 100.0, [], 3, []
     
-    # 如果距离很大，直接判0分 -- 虽然大多数情况下,兜底保险
-    # reality: "bɪt"
-    # standard: "kæt"
-    # 共同音素只有t，但编辑距离是3（全部都要替换），max_length也是3，3/3=1.0，满足distance >= max_length * 0.9，此时会被判0分。
-    # 但is_completely_different_word可能因为有共同音素t和长度相近而没判为完全不同。
-
     if distance >= max_length * 0.9:
-        return 0.0, operations
+        return 0.0, operations, 0, highlighted_phonemes
     
     # 更宽容的扣分方式：用0.7次方减缓惩罚
     normalized_distance = distance / max_length
@@ -415,11 +524,15 @@ def calculate_phone_sent_score(reality_phone: str, standard_phone: str):
     # 不设最低分，完全错误可为0
     score = max(raw_score, 0.0)
     
-    return round(score, 2), operations
+    final_score = round(score, 2)
+    score_level = get_score_level(final_score)
+    
+    return final_score, operations, score_level, highlighted_phonemes
 
 # Test function to demonstrate improvements
 def test_algorithm():
     """Test cases to show the improvements"""
+    
     test_cases = [
         ("laɪk", "laɪk"),      # Perfect match
         ("lɪk", "laɪk"),       # Diphthong -> monophthong
@@ -427,56 +540,45 @@ def test_algorithm():
         ("sink", "θɪŋk"),      # th -> s substitution
         ("bɪt", "bit"),        # Vowel length
         ("kæt", "bæt"),        # Different consonant
-        
-        # New test cases
+        ("kɒntrɪbju:ʃən","/ˌkɒntrɪˈbjuːʃ(ə)n/"), # (), : /ˌkɒntrɪˈbjuːʃ(ə)n/
+        ("dɪskrɪmɪneɪt","/dɪˈskrɪmɪneɪt/"),
+        ("prənʌnsieɪʃn","/prəˌnʌnsiˈeɪʃn/"),
         ("wɜːk", "wɔːk"),      # work vs walk - similar but different vowels
         ("ʃi", "hæpi"),        # she vs happy - completely different words
         ("dɪs", "ðɪs"),        # dis vs this - th->d substitution (common L2 error)
         ("stɹeɪndʒ", "stɹeɪn"), # strange vs strain - extra phonemes at end
         ("læf", "læfɪŋ"),      # laugh vs laughing - missing ending
     ]
-    
+
     # Test phrase cases with connected speech
     phrase_test_cases = [
-        ("nɒtətɔːl", "nɒtætɔːl"),   # "not at all" with connected speech
-        ("ətliːst", "ætliːst"),     # "at least" with connected speech  
-        ("lɛmi", "lɛtmi"),          # "let me" with connected speech
-        ("wʌdə", "wʌtdu"),          # "what do" with connected speech
-    #     ("dɪʤu", "dɪdju"),           # "did you"
-    #     ("kʊʤu", "kʊdju"),           # "could you"
-    #     ("wʊʤu", "wʊdju"),           # "would you"
-    #     ("ʃʊdəv", "ʃʊdəv"),         # "should have"
-    #     ("kʊdəv", "kʊdəv"),         # "could have"
-    #     ("wʊdəv", "wʊdəv"),         # "would have"
-    #     ("duːjə", "duːju"),         # "do you"
-    #     ("aɪdnəʊ", "aɪdəntnoʊ"),    # "I don't know"
-    #     ("gəʊɪŋtə", "gənə"),        # "going to" → "gonna"
-    #     ("wɒnə", "wɒntə"),          # "want to"
-    #     ("ʤəʊtə", "ʤɒt tə"),        # "got to"
-    #     ("kʌməʊn", "kʌmɒn"),        # "come on"
-    #     ("hævtə", "hæftə"),         # "have to"
-    #     ("niːʤə", "niːdju"),        # "need you"
-    #     ("gɪvə", "gɪvə"),           # "give her"
-    #     ("tɛlɪm", "tɛl hɪm"),       # "tell him"
+        ("nəʊrθəmerəkən","/nɔːθ əˈmɛrɪkən/"),
+        ("wətsðəmætər","/wɒts ðə ˈmætə/")
     ]
     
     print("=== Algorithm Comparison ===")
     print("\n--- Single Word Tests ---")
     for reality, standard in test_cases:
-        new_score, new_ops = calculate_phone_sent_score(reality, standard)
+        new_score, new_ops, new_level, highlighted_phonemes = calculate_phone_sent_score(reality, standard)
         
         print(f"\nInput: '{reality}' vs Standard: '{standard}'")
-        print(f"New Score: {new_score}/100")
-        print(f"Operations: {new_ops[:2]}\n")  # Show first 2 operations
+        print(f"New Score: {new_score}/100, Stars: {new_level}")
+        print(f"Operations: {new_ops[:2]}")
+        print(f"Highlighted Phonemes: {highlighted_phonemes}")
+
     
     print("\n--- Phrase Tests (with connected speech) ---")
     for reality, standard in phrase_test_cases:
-        phrase_score, phrase_ops = calculate_phrase_score(reality, standard, is_phrase=True)
-        single_score, single_ops = calculate_phone_sent_score(reality, standard)
+        phrase_score, phrase_ops, phrase_level, highlighted_phonemes = calculate_phrase_score(reality, standard, is_phrase=True)
+        single_score, single_ops, single_level, single_highlighted = calculate_phone_sent_score(reality, standard)
         
         print(f"\nPhrase: '{reality}' vs Standard: '{standard}'")
-        print(f"With connected speech: {phrase_score}/100")
-        print(f"Without connected speech: {single_score}/100")
+        print(f"With connected speech: {phrase_score}/100, Stars: {phrase_level}")
+        print(f"Operations (phrase): {phrase_ops[:2]}")
+        print(f"Highlighted Phonemes (phrase): {highlighted_phonemes}")
+        print(f"Without connected speech: {single_score}/100, Stars: {single_level}")
+        print(f"Operations (single): {single_ops[:2]}")
+        print(f"Highlighted Phonemes (single): {single_highlighted}")
         print(f"Improvement: +{phrase_score - single_score:.1f} points")
 
 if __name__ == "__main__":
