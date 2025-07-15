@@ -1,60 +1,3 @@
-def parse_phonemes_phrase(phonetic_string):
-    """
-    将音标字符串解析为单独的音素，支持更广泛的多字符音素（特别是针对美式发音）
-    参数:
-        phonetic_string: 如 'nəʊrθ' 或 '/nɔːθ əˈmɛrɪkən/' 的字符串
-    返回:
-        音素列表: ['n', 'əʊ', 'r', 'θ']
-    """
-    # 标准化输入字符串，移除常见符号
-    if "ː" in phonetic_string:
-        phonetic_string = phonetic_string.replace('ː', ':')
-    if "əʊ" in phonetic_string: # 兼容əʊ
-        pass
-    phonetic_string = phonetic_string.replace('(', '').replace(')', '').replace('/', '').replace('ˈ', '').replace('ˌ', '').replace('.', ' ').strip()
-    
-    # 定义多字符音素（顺序很重要，长的在前）
-    # 增加了 əʊ, ɔ:, ər, ɪr, ɛr, ʊr, ɔr, ɑr 等常见组合
-    multi_char_phonemes = [
-        # R-colored vowels
-        'ər', 'ɪr', 'ɛr', 'ʊr', 'ɔr', 'ɑr',
-        # Diphthongs (双元音)
-        'aɪ', 'aʊ', 'ɔɪ', 'eɪ', 'oʊ', 'əʊ', 
-        # Other diphthongs
-        'ɪə', 'eə', 'ʊə',
-        # Long vowels (长元音)
-        'i:', 'u:', 'ɑ:', 'ɔ:', 'ɜ:',
-        # Affricates (塞擦音)
-        'tʃ', 'dʒ',
-        # Other common multi-char symbols
-        'θ', 'ð', 'ʃ', 'ʒ', 'ŋ'
-    ]
-    
-    phonemes = []
-    i = 0
-    
-    while i < len(phonetic_string):
-        # 跳过空格
-        if phonetic_string[i] == ' ':
-            i += 1
-            continue
-            
-        # 优先匹配多字符音素
-        matched = False
-        for multi_phoneme in multi_char_phonemes:
-            if phonetic_string[i:].startswith(multi_phoneme):
-                phonemes.append(multi_phoneme)
-                i += len(multi_phoneme)
-                matched = True
-                break
-        
-        # 没有多字符匹配则加单字符
-        if not matched:
-            phonemes.append(phonetic_string[i])
-            i += 1
-            
-    return phonemes
-
 def parse_phonemes(phonetic_string):
     """
     将音标字符串解析为单独的音素，支持多字符音素
@@ -65,14 +8,15 @@ def parse_phonemes(phonetic_string):
     """
      # 新增：处理全角冒号和括号
     if "ː" in phonetic_string:
-        print("Warning: 全角冒号可能导致解析错误，请使用半角冒号")
         phonetic_string = phonetic_string.replace('ː', ':')
     if '(' in phonetic_string or ')' in phonetic_string:
         phonetic_string = phonetic_string.replace('(', '').replace(')', '')
     if '/' in phonetic_string:
         phonetic_string = phonetic_string.replace('/', '')   
-    
-    
+    if ' ' in phonetic_string:
+        phonetic_string = phonetic_string.replace(' ', '')
+    if 'ᵊ' in phonetic_string:
+        phonetic_string = phonetic_string.replace('ᵊ', 'ə')
     # 定义多字符音素（顺序很重要，长的在前）
     multi_char_phonemes = [
         # 塞擦音
@@ -87,7 +31,7 @@ def parse_phonemes(phonetic_string):
     
     phonemes = []
     i = 0
-     
+    
     while i < len(phonetic_string):
         # 跳过重音和音节分界符
         if phonetic_string[i] in ['ˈ', 'ˌ', '.']:
@@ -377,7 +321,7 @@ def generate_connected_speech_variants(phonemes_list):
     if 'ætliːst' in phoneme_string:  # "at least"  
         variants.append(phoneme_string.replace('ætliːst', 'ətliːst'))
     
-    if 'lɛtmi' in phoneme_string:  # "let me"
+    if 'lɛtmi' in phoneme_string:  # "let me" This is just an example, real phrase from db may vary
         variants.append(phoneme_string.replace('lɛtmi', 'lɛmi'))
     
     if 'wʌtdu' in phoneme_string:  # "what do"
@@ -389,14 +333,36 @@ def get_score_level(score):
     """
     根据得分返回星级（0-3）
     """
-    if score >= 90:
+    if score >= 88:
         return 3  # 优秀
-    elif score >= 75:
+    elif score >= 72:
         return 2  # 良好
-    elif score >= 60:
+    elif score >= 40:
         return 1  # 及格
     else:
         return 0  # 需要努力
+
+def get_highlighted_phonemes(reality_phonemes, standard_phonemes, alignment):
+    """
+    根据对齐结果，生成带高亮信息的标准音素列表
+    """
+    highlighted_phonemes = []
+    for reality_phoneme, standard_phoneme, op in alignment:
+        if op == "correct":
+            highlighted_phonemes.append({"phoneme": standard_phoneme, "status": "correct"})
+        elif op == "incorrect":
+            highlighted_phonemes.append({"phoneme": standard_phoneme, "status": "incorrect", "reality": reality_phoneme})
+        elif op == "delete":
+            # This case needs to be handled carefully. 
+            # The phoneme is in the standard but not in reality.
+            # We can decide whether to show it and how.
+            # Option 1: Add to the list with a "deleted" status.
+            # highlighted_phonemes.append({"phoneme": reality_phoneme, "status": "deleted"})
+            pass # Option 2: Don't show deleted phonemes in the standard sequence.
+        elif op == "insert":
+            highlighted_phonemes.append({"phoneme": standard_phoneme, "status": "inserted"})
+
+    return highlighted_phonemes
 
 def calculate_phrase_score(reality_phone: str, standard_phone: str, is_phrase=False):
     """
@@ -410,11 +376,11 @@ def calculate_phrase_score(reality_phone: str, standard_phone: str, is_phrase=Fa
     """
     if not is_phrase:
         # 单词直接用原始算法
-        return calculate_phone_sent_score(reality_phone, standard_phone)
+        return calculate_phone_sent_score_improved(reality_phone, standard_phone)
     
     # 短语则考虑连读
-    reality_phonemes = parse_phonemes_phrase(reality_phone.strip())
-    standard_phonemes = parse_phonemes_phrase(standard_phone.strip())
+    reality_phonemes = parse_phonemes(reality_phone.strip())
+    standard_phonemes = parse_phonemes(standard_phone.strip())
     
     # 生成标准发音的所有连读变体
     standard_variants = generate_connected_speech_variants(standard_phonemes)
@@ -451,7 +417,7 @@ def calculate_phrase_score(reality_phone: str, standard_phone: str, is_phrase=Fa
     
     # 如果没有合适的变体，回退到原始算法
     if best_score == 0:
-        return calculate_phone_sent_score(reality_phone, standard_phone)
+        return calculate_phone_sent_score_improved(reality_phone, standard_phone)
     
     final_score = round(best_score, 2)
     score_level = get_score_level(final_score)
@@ -459,40 +425,17 @@ def calculate_phrase_score(reality_phone: str, standard_phone: str, is_phrase=Fa
 
     return final_score, best_operations, score_level, highlighted_phonemes
 
-def get_highlighted_phonemes(reality_phonemes, standard_phonemes, alignment):
-    """
-    根据对齐结果，生成带高亮信息的标准音素列表
-    """
-    highlighted_phonemes = []
-    for reality_phoneme, standard_phoneme, op in alignment:
-        if op == "correct":
-            highlighted_phonemes.append({"phoneme": standard_phoneme, "status": "correct"})
-        elif op == "incorrect":
-            highlighted_phonemes.append({"phoneme": standard_phoneme, "status": "incorrect", "reality": reality_phoneme})
-        elif op == "delete":
-            # This case needs to be handled carefully. 
-            # The phoneme is in the standard but not in reality.
-            # We can decide whether to show it and how.
-            # Option 1: Add to the list with a "deleted" status.
-            # highlighted_phonemes.append({"phoneme": reality_phoneme, "status": "deleted"})
-            pass # Option 2: Don't show deleted phonemes in the standard sequence.
-        elif op == "insert":
-            highlighted_phonemes.append({"phoneme": standard_phoneme, "status": "inserted"})
-
-    return highlighted_phonemes
-
-def calculate_phone_sent_score(reality_phone: str, standard_phone: str):
+def calculate_phone_sent_score_improved(reality_phone: str, standard_phone: str):
     """
     用音素级分析和音素距离计算发音得分
-    返回:
-        得分(0-100), 操作列表, 星级(0-3), 高亮音素列表
+    得分范围: 0-100（100为完美）
     """
     reality_phone = reality_phone.strip()
     standard_phone = standard_phone.strip()
     
     # 解析为音素
-    reality_phonemes = parse_phonemes_phrase(reality_phone)
-    standard_phonemes = parse_phonemes_phrase(standard_phone)
+    reality_phonemes = parse_phonemes(reality_phone)
+    standard_phonemes = parse_phonemes(standard_phone)
     
     # 判断是否完全不同单词
     if is_completely_different_word(reality_phonemes, standard_phonemes):
@@ -509,6 +452,11 @@ def calculate_phone_sent_score(reality_phone: str, standard_phone: str):
     if max_length == 0:
         return 100.0, [], 3, []
     
+    # 如果距离很大，直接判0分 -- 虽然大多数情况下,兜底保险
+    # reality: "bɪt"
+    # standard: "kæt"
+    # 共同音素只有t，但编辑距离是3（全部都要替换），max_length也是3，3/3=1.0，满足distance >= max_length * 0.9，此时会被判0分。
+    # 但is_completely_different_word可能因为有共同音素t和长度相近而没判为完全不同。
     if distance >= max_length * 0.9:
         return 0.0, operations, 0, highlighted_phonemes
     
@@ -526,7 +474,7 @@ def calculate_phone_sent_score(reality_phone: str, standard_phone: str):
     
     final_score = round(score, 2)
     score_level = get_score_level(final_score)
-    
+
     return final_score, operations, score_level, highlighted_phonemes
 
 # Test function to demonstrate improvements
@@ -559,7 +507,7 @@ def test_algorithm():
     print("=== Algorithm Comparison ===")
     print("\n--- Single Word Tests ---")
     for reality, standard in test_cases:
-        new_score, new_ops, new_level, highlighted_phonemes = calculate_phone_sent_score(reality, standard)
+        new_score, new_ops, new_level, highlighted_phonemes = calculate_phone_sent_score_improved(reality, standard)
         
         print(f"\nInput: '{reality}' vs Standard: '{standard}'")
         print(f"New Score: {new_score}/100, Stars: {new_level}")
@@ -570,7 +518,7 @@ def test_algorithm():
     print("\n--- Phrase Tests (with connected speech) ---")
     for reality, standard in phrase_test_cases:
         phrase_score, phrase_ops, phrase_level, highlighted_phonemes = calculate_phrase_score(reality, standard, is_phrase=True)
-        single_score, single_ops, single_level, single_highlighted = calculate_phone_sent_score(reality, standard)
+        single_score, single_ops, single_level, single_highlighted = calculate_phone_sent_score_improved(reality, standard)
         
         print(f"\nPhrase: '{reality}' vs Standard: '{standard}'")
         print(f"With connected speech: {phrase_score}/100, Stars: {phrase_level}")
